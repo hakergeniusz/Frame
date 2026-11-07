@@ -14,12 +14,22 @@ set -euxo pipefail
 
 SRC=${SRC:-/src}
 CHROOT=${CHROOT:-/tmp/alarm}
-ROOTFS_URL=${ROOTFS_URL:-http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-rootfs.tar.gz}
+ROOTFS_URL=${ROOTFS_URL:-http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz}
 
 curl -fL --retry 3 -o /tmp/alarm-rootfs.tar.gz "$ROOTFS_URL"
 SIZE=$(stat -c %s /tmp/alarm-rootfs.tar.gz)
 echo "rootfs: $SIZE bytes"
 test "$SIZE" -gt 100000000
+
+# Integrity, not authentication: the md5 travels over the same http
+# channel. Authentication comes from pacman GPG-verifying every package
+# it installs inside the chroot.
+if curl -fsSL -o /tmp/alarm-rootfs.md5 "$ROOTFS_URL.md5"; then
+    EXPECT=$(awk '{print $1}' /tmp/alarm-rootfs.md5)
+    ACTUAL=$(md5sum /tmp/alarm-rootfs.tar.gz | awk '{print $1}')
+    echo "rootfs md5: $ACTUAL (expected $EXPECT)"
+    test "$EXPECT" = "$ACTUAL"
+fi
 
 mkdir -p "$CHROOT"
 sudo tar -xpf /tmp/alarm-rootfs.tar.gz -C "$CHROOT"
