@@ -44,5 +44,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: arch-${{ matrix.arch }}
-          path: '**/*.pkg.tar.zst'
+          # The extension follows the build host's makepkg.conf: upstream
+          # Arch defaults to .pkg.tar.zst, ALARM hardcodes .pkg.tar.xz.
+          path: '**/*.pkg.tar.*'
 
