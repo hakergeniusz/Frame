@@ -12,7 +12,9 @@
 # toolchain packages are authenticated regardless of the rootfs transport.
 set -euxo pipefail
 
-SRC=${SRC:-/src}
+# Default to the working directory — unlike build.sh (whose /src default
+# assumes the docker -v mount), this script runs directly on the host.
+SRC=${SRC:-$PWD}
 CHROOT=${CHROOT:-/tmp/alarm}
 ROOTFS_URL=${ROOTFS_URL:-http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz}
 
