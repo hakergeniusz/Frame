@@ -15,18 +15,11 @@ set -euxo pipefail
 # Default to the working directory — unlike build.sh (whose /src default
 # assumes the docker -v mount), this script runs directly on the host.
 SRC=${SRC:-$PWD}
+CHROOT=${CHROOT:-/tmp/alarm}
+TARBALL=${TARBALL:-/tmp/alarm-rootfs.tar.gz}
 ROOTFS_URL=${ROOTFS_URL:-http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz}
 
-# Put the chroot and tarball on the biggest real filesystem: the runner's
-# root volume proved too tight for the rootfs, the toolchain and the build
-# tree together.
-BIGDIR=$(df -B1G --output=target,avail -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null \
-    | awk 'NR>1 && $2+0 > max {max=$2+0; dir=$1} END{print dir}')
-BIGDIR=${BIGDIR:-/tmp}
-echo "biggest filesystem: $BIGDIR ($(df -h "$BIGDIR" | awk 'NR==2{print $4}') free)"
-CHROOT=${CHROOT:-$BIGDIR/alarm}
-TARBALL=${TARBALL:-$BIGDIR/alarm-rootfs.tar.gz}
-
+echo "disk headroom: $(df -h /tmp | awk 'NR==2{print $4}') free on /tmp"
 curl -fL --retry 3 -o "$TARBALL" "$ROOTFS_URL"
 SIZE=$(stat -c %s "$TARBALL")
 echo "rootfs: $SIZE bytes"
