@@ -1,5 +1,6 @@
 # Maintainer: hakergeniusz <hakergeniusz@users.noreply.github.com>
-# Verified arches: x86_64 (native build), aarch64 (cross/CI build)
+# Verified arches: x86_64 and aarch64, both built natively (CI builds
+# aarch64 in an Arch Linux ARM chroot on an arm runner)
 pkgname=frame
 pkgver=1.0.0
 pkgrel=1
@@ -12,9 +13,18 @@ makedepends=(cargo)
 checkdepends=()
 optdepends=('xdg-desktop-portal: file dialogs and screensaver inhibit under sandboxing')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/hakergeniusz/Frame/archive/refs/tags/v$pkgver/$pkgname-$pkgver.tar.gz")
-# Regenerate with `updpkgsums` after creating the release tag; the sums below
-# correspond to the 1.0.0 release tarball produced by the release script.
-sha256sums=('REPLACE_AT_RELEASE')
+# sha256 of the v1.0.0 tag archive as served by codeload (verified
+# byte-stable across repeated authenticated downloads while the repo was
+# private; regenerate with `updpkgsums` if the tag ever moves — a tarball's
+# hash cannot include itself, so this pin necessarily postdates the tag).
+sha256sums=('a60d0a85c78e80730964c26f430a023db5e427227d8bdd278e967ba5d6be8005')
+
+prepare() {
+  # GitHub archives tags under the repository name (Frame-1.0.0/), while
+  # the package tree is frame-$pkgver everywhere else — and the CI build
+  # script stages exactly that name, where this rename is a no-op.
+  mv -T "Frame-$pkgver" "$pkgname-$pkgver" 2>/dev/null || true
+}
 
 build() {
   cd "$pkgname-$pkgver"

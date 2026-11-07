@@ -49,7 +49,9 @@ cd "$WORK"
 tar --sort=name --owner=0 --group=0 --numeric-owner \
     -czf "$WORK/frame-$VERSION.tar.gz" "frame-$VERSION"
 SUM=$(sha256sum "$WORK/frame-$VERSION.tar.gz" | cut -d' ' -f1)
-sed "s/REPLACE_AT_RELEASE/$SUM/" "$SRC/packaging/arch/PKGBUILD" > "$WORK/PKGBUILD"
+# Substitute the whole sha256sums line — the shipped PKGBUILD carries the
+# pinned release checksum, which never matches the locally staged tarball.
+sed "s/^sha256sums=.*/sha256sums=('$SUM')/" "$SRC/packaging/arch/PKGBUILD" > "$WORK/PKGBUILD"
 
 cd "$WORK"
 makepkg -sf --noconfirm --noprogressbar
