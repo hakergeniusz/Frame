@@ -15,26 +15,41 @@ set -euxo pipefail
 # Default to the working directory — unlike build.sh (whose /src default
 # assumes the docker -v mount), this script runs directly on the host.
 SRC=${SRC:-$PWD}
-CHROOT=${CHROOT:-/tmp/alarm}
 ROOTFS_URL=${ROOTFS_URL:-http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz}
 
-curl -fL --retry 3 -o /tmp/alarm-rootfs.tar.gz "$ROOTFS_URL"
-SIZE=$(stat -c %s /tmp/alarm-rootfs.tar.gz)
+# Put the chroot and tarball on the biggest real filesystem: the runner's
+# root volume proved too tight for the rootfs, the toolchain and the build
+# tree together.
+BIGDIR=$(df -B1G --output=target,avail -x tmpfs -x devtmpfs -x squashfs -x overlay 2>/dev/null \
+    | awk 'NR>1 && $2+0 > max {max=$2+0; dir=$1} END{print dir}')
+BIGDIR=${BIGDIR:-/tmp}
+echo "biggest filesystem: $BIGDIR ($(df -h "$BIGDIR" | awk 'NR==2{print $4}') free)"
+CHROOT=${CHROOT:-$BIGDIR/alarm}
+TARBALL=${TARBALL:-$BIGDIR/alarm-rootfs.tar.gz}
+
+curl -fL --retry 3 -o "$TARBALL" "$ROOTFS_URL"
+SIZE=$(stat -c %s "$TARBALL")
 echo "rootfs: $SIZE bytes"
 test "$SIZE" -gt 100000000
 
 # Integrity, not authentication: the md5 travels over the same http
 # channel. Authentication comes from pacman GPG-verifying every package
 # it installs inside the chroot.
-if curl -fsSL -o /tmp/alarm-rootfs.md5 "$ROOTFS_URL.md5"; then
-    EXPECT=$(awk '{print $1}' /tmp/alarm-rootfs.md5)
-    ACTUAL=$(md5sum /tmp/alarm-rootfs.tar.gz | awk '{print $1}')
+if curl -fsSL -o "$TARBALL.md5" "$ROOTFS_URL.md5"; then
+    EXPECT=$(awk '{print $1}' "$TARBALL.md5")
+    ACTUAL=$(md5sum "$TARBALL" | awk '{print $1}')
     echo "rootfs md5: $ACTUAL (expected $EXPECT)"
     test "$EXPECT" = "$ACTUAL"
 fi
 
 mkdir -p "$CHROOT"
-sudo tar -xpf /tmp/alarm-rootfs.tar.gz -C "$CHROOT"
+sudo tar -xpf "$TARBALL" -C "$CHROOT"
+
+# pacman resolves mount points from /etc/mtab; the rootfs ships a static
+# file, which leaves pacman unable to map its cachedir ("could not
+# determine cachedir mount point ... not enough free disk space"). Point
+# mtab at procfs like a normal running system.
+sudo ln -sf /proc/self/mounts "$CHROOT/etc/mtab"
 
 # DNS: copying the host resolv.conf failed on CI — the host runs
 # systemd-resolved, and its 127.0.0.53 stub answers the host but not
