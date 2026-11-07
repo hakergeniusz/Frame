@@ -35,7 +35,25 @@ fi
 
 mkdir -p "$CHROOT"
 sudo tar -xpf /tmp/alarm-rootfs.tar.gz -C "$CHROOT"
-sudo cp /etc/resolv.conf "$CHROOT/etc/resolv.conf"
+
+# DNS: copying the host resolv.conf failed on CI — the host runs
+# systemd-resolved, and its 127.0.0.53 stub answers the host but not
+# processes inside the chroot. Write the host resolver's real upstream
+# servers instead, then the Azure DNS proxy (GitHub runners live on
+# Azure) and public resolvers as fallbacks; glibc tries them in order.
+sudo rm -f "$CHROOT/etc/resolv.conf"
+{
+    resolvectl dns 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) print "nameserver " $i}'
+    printf 'nameserver 168.63.129.16\nnameserver 1.1.1.1\nnameserver 8.8.8.8\n'
+} | awk '!seen[$0]++' | head -n 3 | sudo tee "$CHROOT/etc/resolv.conf" >/dev/null
+
+# Fail fast, with the config in the log, if DNS still cannot resolve.
+if ! sudo chroot "$CHROOT" getent hosts mirror.archlinuxarm.org; then
+    echo "chroot DNS check failed; resolv.conf content:" >&2
+    sudo cat "$CHROOT/etc/resolv.conf" >&2
+    exit 1
+fi
+
 sudo mkdir -p "$CHROOT/src" "$CHROOT/proc"
 sudo mount --bind "$SRC" "$CHROOT/src"
 sudo mount -t proc proc "$CHROOT/proc"
