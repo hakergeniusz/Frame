@@ -48,6 +48,11 @@ sudo tar -xpf "$TARBALL" -C "$CHROOT"
 # shadow the procfs mounted before it.
 sudo mount --bind "$CHROOT" "$CHROOT"
 sudo mount -t proc proc "$CHROOT/proc"
+# The rootfs ships /dev/null as a root-owned regular file, which breaks
+# every redirect of every non-root process (makepkg dies on its first
+# 2>/dev/null). Bind the host /dev over it — real device nodes, correct
+# permissions.
+sudo mount --bind /dev "$CHROOT/dev"
 
 # pacman reads mount points from /etc/mtab; point it at procfs like a
 # running system has it.
