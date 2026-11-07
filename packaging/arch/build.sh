@@ -1,25 +1,38 @@
 #!/usr/bin/env bash
-# Build the Arch pacman package — runs INSIDE an archlinux container (or on
-# any Arch host) with the project mounted at /src. makepkg refuses to run as
-# root, so a throwaway build user owns the staged tree. Architecture follows
-# the container: x86_64 and aarch64 are both built natively this way.
+# Build the Arch pacman package — runs INSIDE an Arch/ALARM chroot (or on
+# any Arch host) with the project mounted at /src. makepkg refuses to run
+# as root, so a throwaway build user owns the staged tree. Architecture
+# follows the environment: x86_64 and aarch64 are both built natively.
 set -euxo pipefail
 
 SRC=${SRC:-/src}
 VERSION=1.0.0
 
 if [ "$(id -u)" = 0 ]; then
-    # ALARM containers ship without a populated pacman keyring; the official
+    # ALARM chroots ship without a populated pacman keyring; the official
     # x86_64 image has no archlinuxarm keyring. Refresh + populate whatever
     # the running distro actually carries before the big transaction, or
     # stale signatures fail it midway.
     pacman-key --init >/dev/null 2>&1 || true
     pacman -Sy --noconfirm archlinuxarm-keyring >/dev/null 2>&1 || true
     pacman-key --populate archlinuxarm >/dev/null 2>&1 || true
-    pacman -Syu --noconfirm base-devel sudo rust gtk4 libadwaita mpv >/dev/null
+    pacman -Syu --noconfirm \
+        base-devel sudo curl ca-certificates rust gtk4 libadwaita mpv >/dev/null
+
+    # Distro rustc differs between Arch (current) and ALARM (lags); pin one
+    # toolchain for both architectures, the way packaging/debian/build.sh
+    # does, so edition-2024 requirements are met identically everywhere.
+    export RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo
+    curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal \
+        --default-toolchain stable --no-modify-path
+    chmod -R a+rX /opt/rustup /opt/cargo
+
     id builder >/dev/null 2>&1 || useradd -m builder
     chown -R builder:builder "$SRC"
-    sudo -u builder bash "$0"
+    sudo -u builder env \
+        RUSTUP_HOME=/opt/rustup CARGO_HOME=/home/builder/.cargo \
+        PATH=/opt/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/bin \
+        bash "$0"
     exit 0
 fi
 

@@ -13,6 +13,7 @@ on:
 jobs:
   deb:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -30,7 +31,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/src" -w /src debian:trixie bash -c '
             apt-get update -qq &&
-            apt-get install -y ./dist/frame_1.0.0_*_${{ matrix.arch }}.deb &&
+            apt-get install -y ./dist/frame_*_${{ matrix.arch }}.deb &&
             frame --version 2>/dev/null || dpkg -L frame'
       - uses: actions/upload-artifact@v4
         with:
@@ -39,6 +40,7 @@ jobs:
 
   rpm:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -59,24 +61,26 @@ jobs:
 
   arch:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             arch: x86_64
-            image: archlinux:latest
+            cmd: docker run --rm -v "$PWD:/src" -w /src archlinux:latest bash packaging/arch/build.sh
           - os: ubuntu-24.04-arm
             arch: aarch64
-            # The official archlinux image is x86_64-only (no linux/arm64
-            # manifest); ALARM's image is the Arch environment for arm64
-            # and runs natively on the arm runner.
-            image: archlinuxarm/archlinuxarm:latest
+            # No official Arch container image exists for arm64 (Docker
+            # Hub's archlinux org is x86_64-only and there is no
+            # archlinuxarm org). Chroot into Arch Linux ARM's official
+            # rootfs instead — the runner is aarch64, so everything runs
+            # natively, no emulation involved.
+            cmd: bash packaging/arch/build-arm64.sh
     runs-on: ${{ matrix.os }}
     name: arch (${{ matrix.arch }})
     steps:
       - uses: actions/checkout@v4
-      - name: Build pacman package in Arch container
-        run: |
-          docker run --rm -v "$PWD:/src" -w /src ${{ matrix.image }} bash packaging/arch/build.sh
+      - name: Build pacman package
+        run: ${{ matrix.cmd }}
       - uses: actions/upload-artifact@v4
         with:
           name: arch-${{ matrix.arch }}
@@ -84,6 +88,7 @@ jobs:
 
   flatpak:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
