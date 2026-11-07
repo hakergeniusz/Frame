@@ -83,6 +83,10 @@ modules:
   - name: libplacebo
     buildsystem: meson
     config-opts:
+      # The Sdk's Fedora-derived meson defaults libdir to lib64 on x86_64
+      # but lib on aarch64; without this pin mpv's pkg-config lookup only
+      # sees /app/lib and misses libplacebo.pc on x86_64 alone.
+      - -Dlibdir=lib
       - -Dvulkan=disabled
       - -Dglslang=disabled
       - -Dshaderc=disabled
@@ -117,6 +121,9 @@ modules:
   - name: mpv
     buildsystem: meson
     config-opts:
+      # Same libdir pin as libplacebo: keep libmpv out of /app/lib64 on
+      # x86_64 so the app's pkg-config lookup finds it.
+      - -Dlibdir=lib
       - -Dgpl=false
       - -Dcplayer=false
       - -Dmanpage-build=disabled
