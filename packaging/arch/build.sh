@@ -9,7 +9,14 @@ SRC=${SRC:-/src}
 VERSION=1.0.0
 
 if [ "$(id -u)" = 0 ]; then
-    pacman -Syu --noconfirm base-devel rust gtk4 libadwaita mpv >/dev/null
+    # ALARM containers ship without a populated pacman keyring; the official
+    # x86_64 image has no archlinuxarm keyring. Refresh + populate whatever
+    # the running distro actually carries before the big transaction, or
+    # stale signatures fail it midway.
+    pacman-key --init >/dev/null 2>&1 || true
+    pacman -Sy --noconfirm archlinuxarm-keyring >/dev/null 2>&1 || true
+    pacman-key --populate archlinuxarm >/dev/null 2>&1 || true
+    pacman -Syu --noconfirm base-devel sudo rust gtk4 libadwaita mpv >/dev/null
     id builder >/dev/null 2>&1 || useradd -m builder
     chown -R builder:builder "$SRC"
     sudo -u builder bash "$0"

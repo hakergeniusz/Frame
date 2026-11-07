@@ -63,15 +63,20 @@ jobs:
         include:
           - os: ubuntu-latest
             arch: x86_64
+            image: archlinux:latest
           - os: ubuntu-24.04-arm
             arch: aarch64
+            # The official archlinux image is x86_64-only (no linux/arm64
+            # manifest); ALARM's image is the Arch environment for arm64
+            # and runs natively on the arm runner.
+            image: archlinuxarm/archlinuxarm:latest
     runs-on: ${{ matrix.os }}
     name: arch (${{ matrix.arch }})
     steps:
       - uses: actions/checkout@v4
       - name: Build pacman package in Arch container
         run: |
-          docker run --rm -v "$PWD:/src" -w /src archlinux:latest bash packaging/arch/build.sh
+          docker run --rm -v "$PWD:/src" -w /src ${{ matrix.image }} bash packaging/arch/build.sh
       - uses: actions/upload-artifact@v4
         with:
           name: arch-${{ matrix.arch }}
