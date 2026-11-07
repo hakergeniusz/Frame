@@ -55,7 +55,9 @@ cd "$WORK"
 makepkg -sf --noconfirm --noprogressbar
 
 mkdir -p "$SRC/dist"
-cp frame-*.pkg.tar.zst "$SRC/dist/"
+# The package extension follows the build host's /etc/makepkg.conf: upstream
+# Arch defaults to .pkg.tar.zst, ALARM hardcodes .pkg.tar.xz — match either.
+cp frame-*.pkg.tar.* "$SRC/dist/"
 echo "---- built packages ----"
 ls -la "$SRC/dist/"
-pacman -Qip "$SRC"/dist/*.pkg.tar.zst | head -25
+pacman -Qip "$SRC"/dist/frame-*.pkg.tar.* | head -25
