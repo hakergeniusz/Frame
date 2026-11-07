@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.hakergeniusz.Frame</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Frame</name>
+  <summary>Independent desktop media player</summary>
+  <description>
+    <p>
+      Frame plays local video files, whole folders, and network URLs with a
+      keyboard-driven GNOME interface: playlists with shuffle, watch history,
+      multiple audio and subtitle tracks (including a secondary subtitle
+      track), subtitle styling, playback speed, A-B looping, chapter
+      navigation, picture adjustments, screenshots, and a statistics overlay.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.hakergeniusz.Frame.desktop</launchable>
+  <url type="homepage">https://github.com/hakergeniusz/Frame</url>
+  <url type="bugtracker">https://github.com/hakergeniusz/Frame/issues</url>
+  <developer>
+    <name>hakergeniusz</name>
+  </developer>
+  <update_contact>hakergeniusz@users.noreply.github.com</update_contact>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.0.0" date="2026-11-03">
+      <description>
+        <p>Initial release.</p>
+      </description>
+    </release>
+  </releases>
+  <provides>
+    <binary>frame</binary>
+    <id>io.github.hakergeniusz.Frame.desktop</id>
+  </provides>
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+</component>

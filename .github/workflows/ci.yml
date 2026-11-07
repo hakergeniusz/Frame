@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: amd64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    name: test (${{ matrix.arch }})
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-4-dev libadwaita-1-dev libmpv-dev pkg-config \
+            libegl1-mesa-dev libglx-dev desktop-file-utils appstream
+      - name: Build
+        run: cargo build --release --locked
+      - name: Run tests
+        run: cargo test --release --locked
+      - name: Validate desktop + AppStream metadata
+        run: |
+          desktop-file-validate assets/io.github.hakergeniusz.Frame.desktop
+          appstreamcli validate --no-net assets/io.github.hakergeniusz.Frame.metainfo.xml

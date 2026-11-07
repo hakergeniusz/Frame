@@ -1,0 +1,52 @@
+# Maintainer: hakergeniusz <hakergeniusz@users.noreply.github.com>
+# Verified arches: x86_64 (native build), aarch64 (cross/CI build)
+pkgname=frame
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Independent keyboard-driven media player"
+arch=(x86_64 aarch64)
+url="https://github.com/hakergeniusz/Frame"
+license=(MIT)
+depends=(gtk4 libadwaita mpv)
+makedepends=(cargo)
+checkdepends=()
+optdepends=('xdg-desktop-portal: file dialogs and screensaver inhibit under sandboxing')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/hakergeniusz/Frame/archive/refs/tags/v$pkgver/$pkgname-$pkgver.tar.gz")
+# Regenerate with `updpkgsums` after creating the release tag; the sums below
+# correspond to the 1.0.0 release tarball produced by the release script.
+sha256sums=('REPLACE_AT_RELEASE')
+
+build() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo build --release --locked
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  cargo test --release --locked
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 target/release/frame "$pkgdir/usr/bin/frame"
+
+  _app=io.github.hakergeniusz.Frame
+  install -Dm644 "assets/$_app.desktop" \
+    "$pkgdir/usr/share/applications/$_app.desktop"
+  install -Dm644 "assets/$_app.metainfo.xml" \
+    "$pkgdir/usr/share/metainfo/$_app.metainfo.xml"
+
+  for size in 16x16 24x24 32x32 48x48 64x64 128x128 256x256 512x512; do
+    install -Dm644 "assets/icons/$size/apps/$_app.png" \
+      "$pkgdir/usr/share/icons/hicolor/$size/apps/$_app.png"
+  done
+  install -Dm644 "assets/icons/scalable/apps/$_app.svg" \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/$_app.svg"
+  install -Dm644 "assets/icons/scalable/actions/frame-ab-loop-symbolic.svg" \
+    "$pkgdir/usr/share/icons/hicolor/scalable/actions/frame-ab-loop-symbolic.svg"
+  install -Dm644 "assets/icons/scalable/actions/frame-chapters-symbolic.svg" \
+    "$pkgdir/usr/share/icons/hicolor/scalable/actions/frame-chapters-symbolic.svg"
+
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

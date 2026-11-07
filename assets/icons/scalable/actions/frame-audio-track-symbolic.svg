@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Frame original icon (MIT, part of Frame's own artwork): the audio-track
+  menu glyph — five vertically centred rounded bars, centre tallest.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <g fill="currentColor">
+    <rect x="1.5" y="5.5" width="2" height="5" rx="1"/>
+    <rect x="4.5" y="3.5" width="2" height="9" rx="1"/>
+    <rect x="7.5" y="1" width="2" height="14" rx="1"/>
+    <rect x="10.5" y="3.5" width="2" height="9" rx="1"/>
+    <rect x="13.5" y="5.5" width="2" height="5" rx="1"/>
+  </g>
+</svg>

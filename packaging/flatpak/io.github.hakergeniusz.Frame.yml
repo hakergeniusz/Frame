@@ -1,0 +1,168 @@
+# Flatpak manifest for Frame.
+#
+# Engine licence note: mpv is built here with `-Dgpl=false` against an
+# FFmpeg configuration that enables no GPL-only components, producing an
+# LGPL-2.1-or-later libmpv. Frame's own code remains MIT. Verify — do not
+# assume — after every bump: check `mpv -Dgpl=false` still passes meson's
+# GPL guard and that no GPL library slipped into the FFmpeg build log.
+app-id: io.github.hakergeniusz.Frame
+runtime: org.gnome.Platform
+runtime-version: "49"
+sdk: org.gnome.Sdk
+# Branch intentionally unqualified: flatpak resolves it from the SDK's
+# extension-point metadata (GNOME 49's SDK pins version 25.08). Passing an
+# explicit "//25.08" here breaks flatpak build-init's extension matching.
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: frame
+separate-locales: false
+
+finish-args:
+  # Video output.
+  - --device=dri
+  - --socket=wayland
+  - --socket=x11
+  - --share=ipc
+  # Audio output via the PulseAudio/PipeWire socket.
+  - --socket=pulseaudio
+  # Network streaming (Open URL).
+  - --share=network
+  # Media files are opened directly; mpv cannot use the document portal,
+  # so read-only home access is required to play arbitrary local files.
+  - --filesystem=home:ro
+  # Screenshots go to ~/Pictures/Frame (create if missing).
+  - --filesystem=xdg-pictures/Frame:create
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /share/man
+  - "*.a"
+  - "*.la"
+
+modules:
+  # FFmpeg — LGPL configuration: no --enable-gpl, no GPL-only libraries
+  # (x264/x265/xvid and friends stay out; the defaults only cover
+  # LGPL-compatible codecs).
+  - name: ffmpeg
+    buildsystem: autotools
+    builddir: true
+    config-opts:
+      - --disable-debug
+      - --disable-doc
+      - --disable-static
+      - --enable-shared
+      - --disable-programs
+      - --disable-iconv
+    sources:
+      - type: archive
+        url: https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz
+        sha256: 733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1
+
+  # libass — subtitle renderer (ISC licence).
+  - name: libass
+    buildsystem: autotools
+    builddir: true
+    config-opts:
+      - --disable-static
+      - --enable-shared
+      - --disable-test
+    sources:
+      - type: archive
+        url: https://github.com/libass/libass/releases/download/0.17.3/libass-0.17.3.tar.xz
+        sha256: eae425da50f0015c21f7b3a9c7262a910f0218af469e22e2931462fed3c50959
+
+  # libplacebo — required by mpv 0.40's render core (LGPL-2.1-or-later).
+  # Built OpenGL-only: Vulkan, shaderc/glslang and the optional extras stay
+  # out; the GL path needs no SPIR-V compiler.
+  - name: libplacebo
+    buildsystem: meson
+    config-opts:
+      - -Dvulkan=disabled
+      - -Dglslang=disabled
+      - -Dshaderc=disabled
+      - -Dd3d11=disabled
+      - -Dlcms=disabled
+      - -Ddovi=disabled
+      - -Dlibdovi=disabled
+      - -Ddemos=false
+      - -Dtests=false
+    sources:
+      - type: archive
+        url: https://code.videolan.org/videolan/libplacebo/-/archive/v7.351.0/libplacebo-v7.351.0.tar.gz
+        sha256: 4efe1c8d4da3c61295eb5fdfa50e6037409d8425eb3c15dd86788679c4ce59ee
+      # The release archive excludes git submodules; libplacebo's OpenGL
+      # header generation needs the glad2 python module and its template
+      # dependencies. Pinned commits, matching upstream's 3rdparty layout.
+      - type: git
+        url: https://github.com/Dav1dde/glad
+        commit: 0a7cf1af9e25e02821587bd4095807fc90b6426a
+        dest: 3rdparty/glad
+      - type: git
+        url: https://github.com/pallets/jinja
+        commit: 2d4ce43010630478ee88b463f731389fa18953f4
+        dest: 3rdparty/jinja
+      - type: git
+        url: https://github.com/pallets/markupsafe
+        commit: 6c7c43952546366c9701ca099b7e228c1e46578e
+        dest: 3rdparty/markupsafe
+
+  # mpv — libmpv only, LGPL build. GPL-only and unneeded optional
+  # dependencies are disabled explicitly so the -Dgpl=false guard holds.
+  - name: mpv
+    buildsystem: meson
+    config-opts:
+      - -Dgpl=false
+      - -Dcplayer=false
+      - -Dmanpage-build=disabled
+      - -Dlua=disabled
+      - -Djavascript=disabled
+      - -Dlibarchive=disabled
+      - -Dlibbluray=disabled
+      - -Ddvdnav=disabled
+      - -Dcdda=disabled
+      - -Duchardet=disabled
+      - -Drubberband=disabled
+      - -Dlcms2=disabled
+      - -Dzimg=disabled
+      - -Dvulkan=disabled
+      - -Dshaderc=disabled
+      - -Dvapoursynth=disabled
+      - -Dopenal=disabled
+      - -Dsdl2=disabled
+      - -Djack=disabled
+      - -Dalsa=disabled
+      - -Dpipewire=disabled
+    sources:
+      - type: archive
+        url: https://github.com/mpv-player/mpv/archive/refs/tags/v0.40.0.tar.gz
+        sha256: 10a0f4654f62140a6dd4d380dcf0bbdbdcf6e697556863dc499c296182f081a3
+
+  # Frame itself — offline cargo build against vendored crates
+  # (cargo-sources.json, generated from Cargo.lock by
+  # flatpak-builder-tools/cargo; network access is neither available nor
+  # allowed inside the build sandbox).
+  - name: frame
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/frame/cargo
+        CARGO_NET_OFFLINE: "true"
+    build-commands:
+      - cargo fetch --offline --locked --verbose
+      - cargo build --offline --release --locked
+      - install -Dm755 target/release/frame ${FLATPAK_DEST}/bin/frame
+      - install -Dm644 assets/io.github.hakergeniusz.Frame.desktop ${FLATPAK_DEST}/share/applications/io.github.hakergeniusz.Frame.desktop
+      - install -Dm644 assets/io.github.hakergeniusz.Frame.metainfo.xml ${FLATPAK_DEST}/share/metainfo/io.github.hakergeniusz.Frame.metainfo.xml
+      # PNG sizes only: flatpak build-export validates installed icons
+      # through gdk-pixbuf, which has no SVG loader where librsvg >= 2.63
+      # stopped shipping one. The SVG master and the symbolic icons are
+      # embedded in the binary via GResource (assets/resources.gresource.xml),
+      # and the other package formats do install the SVG copy.
+      - for size in 16x16 24x24 32x32 48x48 64x64 128x128 256x256 512x512; do install -Dm644 "assets/icons/${size}/apps/io.github.hakergeniusz.Frame.png" "${FLATPAK_DEST}/share/icons/hicolor/${size}/apps/io.github.hakergeniusz.Frame.png"; done
+      - install -Dm644 LICENSE ${FLATPAK_DEST}/share/licenses/frame/LICENSE
+    sources:
+      - type: dir
+        path: ../..
+      - cargo-sources.json

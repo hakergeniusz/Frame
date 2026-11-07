@@ -1,0 +1,32 @@
+Source: frame
+Section: video
+Priority: optional
+Maintainer: hakergeniusz <hakergeniusz@users.noreply.github.com>
+Standards-Version: 4.7.0
+Homepage: https://github.com/hakergeniusz/Frame
+Rules-Requires-Root: no
+Build-Depends:
+  debhelper-compat (= 13),
+  cargo,
+  rustc (>= 1.85),
+  libgtk-4-dev,
+  libadwaita-1-dev (>= 1.5),
+  libmpv-dev,
+  pkg-config
+# NOTE: gtk4-rs 0.22 requires rustc >= 1.92, newer than Debian stable's
+# rustc. The verified build path (packaging/debian/build.sh) installs the
+# current stable Rust via rustup before dpkg-buildpackage runs.
+
+Package: frame
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: xdg-desktop-portal
+Description: independent keyboard-driven media player
+ Frame plays local video files, whole folders, and network URLs with a
+ keyboard-driven GTK 4 / libadwaita interface: playlists with shuffle,
+ watch history, multiple audio and subtitle tracks (including a secondary
+ subtitle track), subtitle styling, playback speed, A-B looping, chapter
+ navigation, picture adjustments, screenshots, and a statistics overlay.
+ .
+ Playback is powered by libmpv, which is dynamically linked and remains
+ under its own licence (see /usr/share/doc/frame/copyright).

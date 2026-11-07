@@ -1,0 +1,21 @@
+# Rust
+/target
+# Packaging build outputs
+/dist
+**/*.deb
+**/*.rpm
+**/*.flatpak
+*.pkg.tar.zst
+# Flatpak-builder working dirs
+/.flatpak-builder
+packaging/flatpak/.flatpak-builder/
+# Built flatpak checkouts and OSTree repos
+packaging/flatpak/build/
+packaging/flatpak/repo/
+packaging/flatpak/downloads/
+flatpak-dist/
+# Test media and scratch (kept in /tmp/ai-agent, but just in case)
+*.mp4
+*.mkv
+*.webm
+!docs/**

@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Application
+Name=Frame
+GenericName=Media Player
+Comment=Play local files, folders, and network URLs
+Exec=frame %U
+TryExec=frame
+Icon=io.github.hakergeniusz.Frame
+Terminal=false
+Categories=AudioVideo;Video;Player;GTK;
+StartupNotify=true
+StartupWMClass=io.github.hakergeniusz.Frame
+SingleMainWindow=true
+X-Purpose-Display=video
+MimeType=video/mp4;video/mpeg;video/x-matroska;video/webm;video/quicktime;video/x-msvideo;video/x-flv;video/ogg;application/ogg;audio/mpeg;audio/x-flac;audio/ogg;audio/x-wav;x-scheme-handler/http;x-scheme-handler/https;
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=frame

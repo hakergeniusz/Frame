@@ -1,0 +1,42 @@
+#!/usr/bin/make -f
+# Debhelper rules for Frame. The Rust build is driven directly because
+# debhelper's default dh_auto_* build hooks target make-based builds.
+
+export DEB_BUILD_MAINT_OPTIONS := hardening=+all
+
+# Keep cargo off the $HOME of the invoking user (pbp/sbuild build as nobody).
+export CARGO_HOME := $(CURDIR)/debian/.cargo
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	# Nothing to configure; cargo reads Cargo.toml.
+
+override_dh_auto_build:
+	cargo build --release --locked
+
+override_dh_auto_test:
+	cargo test --release --locked
+
+override_dh_auto_install:
+	install -Dm755 target/release/frame debian/frame/usr/bin/frame
+	for size in 16x16 24x24 32x32 48x48 64x64 128x128 256x256 512x512; do \
+		install -Dm644 "assets/icons/$$size/apps/io.github.hakergeniusz.Frame.png" \
+			"debian/frame/usr/share/icons/hicolor/$$size/apps/io.github.hakergeniusz.Frame.png"; \
+	done
+	install -Dm644 assets/icons/scalable/apps/io.github.hakergeniusz.Frame.svg \
+		debian/frame/usr/share/icons/hicolor/scalable/apps/io.github.hakergeniusz.Frame.svg
+	install -Dm644 assets/icons/scalable/actions/frame-ab-loop-symbolic.svg \
+		debian/frame/usr/share/icons/hicolor/scalable/actions/frame-ab-loop-symbolic.svg
+	install -Dm644 assets/icons/scalable/actions/frame-chapters-symbolic.svg \
+		debian/frame/usr/share/icons/hicolor/scalable/actions/frame-chapters-symbolic.svg
+	install -Dm644 assets/io.github.hakergeniusz.Frame.desktop \
+		debian/frame/usr/share/applications/io.github.hakergeniusz.Frame.desktop
+	install -Dm644 assets/io.github.hakergeniusz.Frame.metainfo.xml \
+		debian/frame/usr/share/metainfo/io.github.hakergeniusz.Frame.metainfo.xml
+	install -Dm644 LICENSE debian/frame/usr/share/licenses/frame/LICENSE
+
+override_dh_dwz:
+	# dwz is of limited use for a single large Rust binary; skip it.
+	:

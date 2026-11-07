@@ -1,0 +1,29 @@
+[package]
+name = "frame"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Frame — independent desktop media player"
+license = "MIT"
+authors = ["hakergeniusz"]
+repository = "https://github.com/hakergeniusz/Frame"
+homepage = "https://github.com/hakergeniusz/Frame"
+
+[dependencies]
+gtk = { version = "0.11", package = "gtk4", features = ["v4_14"] }
+adw = { version = "0.9", package = "libadwaita", features = ["v1_6"] }
+gio = "0.22"
+glib = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+png = "0.18"
+async-channel = "2"
+libc = "0.2"
+
+[build-dependencies]
+pkg-config = "0.3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

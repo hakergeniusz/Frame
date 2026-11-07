@@ -1,0 +1,6 @@
+frame (1.0.0) unstable; urgency=medium
+
+  * Initial release of Frame, an independent keyboard-driven media player
+    for GTK 4 / libadwaita powered by libmpv.
+
+ -- hakergeniusz <hakergeniusz@users.noreply.github.com>  Tue, 03 Nov 2026 12:00:00 +0000

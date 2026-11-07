@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Frame — original application icon (io.github.hakergeniusz.Frame).
+
+  Original artwork for the Frame project, designed from scratch: four
+  viewfinder corner brackets ("framing" a shot) around a glowing play
+  mark on a charcoal tile. Deliberately unrelated to any existing
+  media-player artwork (clean-room requirement). Editable master source;
+  the PNG size set is rendered from this file with rsvg-convert.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#262a33"/>
+      <stop offset="1" stop-color="#13151b"/>
+    </linearGradient>
+    <linearGradient id="play" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7df0bd"/>
+      <stop offset="0.55" stop-color="#3fc9e8"/>
+      <stop offset="1" stop-color="#5c8df7"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#3fc9e8" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#3fc9e8" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="lift" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- tile -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
+  <rect x="18" y="18" width="476" height="476" rx="110" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="4"/>
+
+  <!-- soft halo behind the play mark -->
+  <ellipse cx="272" cy="256" rx="150" ry="142" fill="url(#glow)"/>
+
+  <!-- viewfinder corner brackets: the frame -->
+  <g stroke="#f2f5f9" stroke-width="34" stroke-linecap="round" fill="none">
+    <path d="M 200 122 H 160 Q 122 122 122 160 V 200"/>
+    <path d="M 312 122 H 352 Q 390 122 390 160 V 200"/>
+    <path d="M 122 312 V 352 Q 122 390 160 390 H 200"/>
+    <path d="M 390 312 V 352 Q 390 390 352 390 H 312"/>
+  </g>
+
+  <!-- play mark (optically centred, rounded corners via matching stroke) -->
+  <g filter="url(#lift)">
+    <path d="M 224 194 L 322 256 L 224 318 Z" fill="url(#play)" stroke="url(#play)" stroke-width="24" stroke-linejoin="round"/>
+  </g>
+</svg>
