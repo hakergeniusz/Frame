@@ -38,10 +38,19 @@ fi
 mkdir -p "$CHROOT"
 sudo tar -xpf "$TARBALL" -C "$CHROOT"
 
-# pacman resolves mount points from /etc/mtab; the rootfs ships a static
-# file, which leaves pacman unable to map its cachedir ("could not
-# determine cachedir mount point ... not enough free disk space"). Point
-# mtab at procfs like a normal running system.
+# The kernel hides mounts outside the reader's tree from /proc/mounts, so
+# a chrooted pacman sees no `/` entry and cannot map its cachedir or its
+# install targets to a filesystem ("could not determine cachedir mount
+# point ... not enough free disk space"). Bind the chroot root onto
+# itself — exactly what a container runtime provides — so the bind shows
+# up inside as a `/` entry covering every path pacman touches. The proc
+# mount must come after: a plain bind does not carry submounts, and would
+# shadow the procfs mounted before it.
+sudo mount --bind "$CHROOT" "$CHROOT"
+sudo mount -t proc proc "$CHROOT/proc"
+
+# pacman reads mount points from /etc/mtab; point it at procfs like a
+# running system has it.
 sudo ln -sf /proc/self/mounts "$CHROOT/etc/mtab"
 
 # DNS: copying the host resolv.conf failed on CI — the host runs
@@ -62,7 +71,6 @@ if ! sudo chroot "$CHROOT" getent hosts mirror.archlinuxarm.org; then
     exit 1
 fi
 
-sudo mkdir -p "$CHROOT/src" "$CHROOT/proc"
+sudo mkdir -p "$CHROOT/src"
 sudo mount --bind "$SRC" "$CHROOT/src"
-sudo mount -t proc proc "$CHROOT/proc"
 sudo chroot "$CHROOT" bash /src/packaging/arch/build.sh
