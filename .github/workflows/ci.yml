@@ -5,9 +5,6 @@ on:
     branches: [main]
   pull_request:
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
   test:
     strategy:
@@ -18,15 +15,20 @@ jobs:
           - os: ubuntu-24.04-arm
             arch: arm64
     runs-on: ${{ matrix.os }}
+    # libadwaita-sys requires libadwaita >= 1.6; ubuntu-24.04 (ubuntu-latest)
+    # ships 1.5.0. The Arch container carries a current GTK4/libadwaita stack
+    # — the same environment packaging/arch/build.sh is proven in.
+    container:
+      image: archlinux:latest
     name: test (${{ matrix.arch }})
     steps:
+      - name: Install git (actions/checkout needs it inside the container)
+        run: pacman -Syu --noconfirm git
       - uses: actions/checkout@v4
-      - name: Install system dependencies
+      - name: Install toolchain and libraries
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libgtk-4-dev libadwaita-1-dev libmpv-dev pkg-config \
-            libegl1-mesa-dev libglx-dev desktop-file-utils appstream
+          pacman -Syu --noconfirm --needed \
+            base-devel rust gtk4 libadwaita mpv desktop-file-utils appstream
       - name: Build
         run: cargo build --release --locked
       - name: Run tests
