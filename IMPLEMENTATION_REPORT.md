@@ -199,17 +199,17 @@ the official Arch container image is x86_64-only. **[verified]** green on
 both architectures.
 
 `.github/workflows/packages.yml` — on `v*` tags and manual dispatch: all
-four package formats on both architectures, artifacts uploaded. The first
-runs surfaced and fixed four infrastructure constraints (details in
+four package formats on both architectures, artifacts uploaded. The runs
+surfaced and fixed several infrastructure constraints (details in
 IMPLEMENTATION_DECISIONS.md §5): ffmpeg.org throttles CI networks (mirror
 added), no Arch container image exists for arm64 (official ALARM rootfs
-chroot instead), the Sdk's meson puts lib64 on x86_64 (libdir pinned),
-and the deb smoke-test glob assumed a Debian revision the package does
-not carry. Across dispatch runs 42369638334/42370903446, every packaging
-format is green on at least one runner and deb/rpm/flatpak are green on
-**both** architectures (deb arm64, rpm aarch64, flatpak aarch64 built
-natively on the arm runner); the `v1.0.0` tag run is the single-run
-all-green proof.
+chroot instead — whose chroot DNS, kernel mount-visibility, root-owned
+`/dev/null` and `PKGEXT=.pkg.tar.xz` quirks each cost a run to find),
+the Sdk's meson puts lib64 on x86_64 (libdir pinned), and the deb
+smoke-test glob assumed a Debian revision the package does not carry.
+The `v1.0.0` tag run (42378275747) is the single-run all-green proof:
+all eight jobs succeeded and all eight artifacts
+(deb/rpm/arch/flatpak × amd64/arm64) were uploaded.
 
 ## 10. Licensing (separate entries, per the owner's instruction)
 
@@ -612,9 +612,12 @@ directory name, repository hosting, Escape-to-close for Preferences).
   built earlier predate this round and are stale.
 - Published (2026-11-07, owner directive): repository
   `github.com/hakergeniusz/Frame` (private), branch `main` pushed, tag
-  `v1.0.0`. The PKGBUILD release checksum lands on `main` right after the
-  tag (see decisions §5 — a tarball's hash cannot include itself); CI and
-  the packaging workflow run on every push and the tag respectively.
+  `v1.0.0` (f073be9). The tag run 42378275747 went 8/8 green with all
+  eight per-arch artifacts uploaded. The PKGBUILD release checksum — the
+  codeload archive sha256, not the API tarball's, which is a different
+  byte stream (decisions §5) — landed on `main` right after the tag
+  (fd5852f): a tarball's hash cannot include itself. CI and the
+  packaging workflow run on every push and the tag respectively.
 - Local scratch (Xvfb harness, test media, container logs) lives in
   `/tmp/ai-agent/` and is disposable.
 
