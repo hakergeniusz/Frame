@@ -11,53 +11,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  deb:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            arch: amd64
-          - os: ubuntu-24.04-arm
-            arch: arm64
-    runs-on: ${{ matrix.os }}
-    name: deb (${{ matrix.arch }})
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build .deb in Debian container
-        run: |
-          docker run --rm -v "$PWD:/src" -w /src debian:trixie bash packaging/debian/build.sh
-      - name: Smoke-test package install
-        run: |
-          docker run --rm -v "$PWD:/src" -w /src debian:trixie bash -c '
-            apt-get update -qq &&
-            apt-get install -y ./dist/frame_*_${{ matrix.arch }}.deb &&
-            frame --version 2>/dev/null || dpkg -L frame'
-      - uses: actions/upload-artifact@v4
-        with:
-          name: deb-${{ matrix.arch }}
-          path: dist/*.deb
 
-  rpm:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            arch: x86_64
-          - os: ubuntu-24.04-arm
-            arch: aarch64
-    runs-on: ${{ matrix.os }}
-    name: rpm (${{ matrix.arch }})
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build .rpm in Fedora container
-        run: |
-          docker run --rm -v "$PWD:/src" -w /src fedora:latest bash packaging/fedora/build.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rpm-${{ matrix.arch }}
-          path: dist/*.rpm
 
   arch:
     strategy:
@@ -92,38 +46,3 @@ jobs:
           name: arch-${{ matrix.arch }}
           path: '**/*.pkg.tar.zst'
 
-  flatpak:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            arch: x86_64
-          - os: ubuntu-24.04-arm
-            arch: aarch64
-    runs-on: ${{ matrix.os }}
-    name: flatpak (${{ matrix.arch }})
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install flatpak
-        run: sudo apt-get install -y flatpak flatpak-builder
-      - name: Set up Flathub
-        run: |
-          flatpak remote-add --user --if-not-exists flathub \
-            https://dl.flathub.org/repo/flathub.flatpakrepo
-      - name: Install runtime + rust extension
-        run: |
-          flatpak install --user --noninteractive flathub \
-            org.gnome.Platform//49 org.gnome.Sdk//49 \
-            org.freedesktop.Sdk.Extension.rust-stable//25.08
-      - name: Build bundle
-        run: |
-          flatpak-builder --user --install-deps-from=flathub --force-clean \
-            --repo=repo --arch=${{ matrix.arch }} dist \
-            packaging/flatpak/io.github.hakergeniusz.Frame.yml
-          flatpak build-bundle repo \
-            frame-1.0.0-${{ matrix.arch }}.flatpak io.github.hakergeniusz.Frame
-      - uses: actions/upload-artifact@v4
-        with:
-          name: flatpak-${{ matrix.arch }}
-          path: '*.flatpak'
