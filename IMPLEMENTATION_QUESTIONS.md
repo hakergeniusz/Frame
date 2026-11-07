@@ -17,9 +17,7 @@ implementation that the specs did not answer. Answers get recorded in
 2. **Screenshots directory.** The spec says screenshots go to the user's
    Pictures directory; Frame uses `~/Pictures/Frame/`. Confirm the
    subdirectory name.
-3. **Repository hosting.** The AppStream/desktop URLs point at
-   `github.com/hakergeniusz/Frame` (not yet created). Confirm before
-   release so the metadata validates.
+3. **~~Repository hosting.~~** Answered 2026-11-07 — see below.
 4. **Escape-to-close for the Preferences window.** `docs/08` does not
    document whether the original's preferences window closes on Escape
    (libadwaita's stock preferences window does). Frame currently closes
@@ -40,5 +38,11 @@ implementation that the specs did not answer. Answers get recorded in
 
 ## Answered during implementation
 
-*(none yet — see `IMPLEMENTATION_DECISIONS.md` for decisions taken
-autonomously where the docs were unambiguous)*
+3. **Repository hosting.** The owner directed "move this repo to
+   GitHub" (2026-11-07); the repository now exists at
+   `github.com/hakergeniusz/Frame` (private, matching the AppStream/desktop
+   URLs), so the metadata validates. Public visibility remains the
+   owner's call — flipping it was not requested.
+
+*(Other decisions taken autonomously where the docs were unambiguous
+live in `IMPLEMENTATION_DECISIONS.md`.)*
