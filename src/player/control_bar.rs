@@ -388,6 +388,14 @@ impl ControlBar {
 
         // Hover chip position: the player window owns the overlay placement
         // (chip under the thumbnail when one is visible).
+        //
+        // Raw motion fires at the mouse's polling rate — up to ~1000 Hz —
+        // and every event used to read the duration out of mpv (core lock,
+        // contended with the decode loop) plus re-layout two overlay
+        // children, which read as lag the moment the pointer touched the
+        // bar. The event now only records the position and arms a one-shot
+        // frame-clock tick; the whole hover update runs once per display
+        // frame at most.
         let motion = gtk::EventControllerMotion::new();
         {
             let core = core.clone();
@@ -395,50 +403,113 @@ impl ControlBar {
             let bubble = hover_bubble.clone();
             let scrubbing = scrub_paused.clone();
             let scrub_thumb_at = Rc::new(Cell::new(std::time::Instant::now()));
-            motion.connect_motion(move |_, x, y| {
-                let duration = core.player.get_double("duration").unwrap_or(0.0);
-                let width = scale.width().max(1) as f64;
-                let frac = (x / width).clamp(0.0, 1.0);
-                let t = frac * duration;
-                bubble.set_text(&crate::ui::util::format_time(t));
-                bubble.set_visible(duration > 0.0);
-                core.hover_x.set(x);
-                core.reposition_time_chip();
-                // The visible preview glides with the pointer between
-                // content updates (its frames land on decode time, the
-                // position must not wait for them).
-                core.reposition_thumb_preview();
-                // While a scrub session is active the hover preview's seeks
-                // on the hidden second instance still compete with the scrub
-                // seeks for decode — throttle them to one every 150 ms
-                // instead of suppressing them entirely (owner: more frequent
-                // thumbnails; the thumbnailer seeks keyframe-only, so its
-                // steps land fast even on heavy files).
-                if !scrubbing.get() {
-                    core.queue_seek_thumbnail(t);
-                } else if scrub_thumb_at.get().elapsed()
-                    >= std::time::Duration::from_millis(150)
-                {
-                    scrub_thumb_at.set(std::time::Instant::now());
-                    core.queue_seek_thumbnail(t);
+            let hover_tick: Rc<RefCell<Option<gtk::TickCallbackId>>> =
+                Rc::new(RefCell::new(None));
+            let arm_hover = {
+                let core = core.clone();
+                let scale = scale.clone();
+                let bubble = bubble.clone();
+                let scrubbing = scrubbing.clone();
+                let scrub_thumb_at = scrub_thumb_at.clone();
+                let hover_tick = hover_tick.clone();
+                move || {
+                    if hover_tick.borrow().is_some() {
+                        return;
+                    }
+                    let core_tick = core.clone();
+                    let scale_tick = scale.clone();
+                    let bubble_tick = bubble.clone();
+                    let scrubbing_tick = scrubbing.clone();
+                    let scrub_thumb_tick = scrub_thumb_at.clone();
+                    let slot = hover_tick.clone();
+                    *hover_tick.borrow_mut() = Some(scale.add_tick_callback(move |_, _| {
+                        *slot.borrow_mut() = None;
+                        if std::env::var_os("FRAME_DEBUG").is_some() {
+                            static TICKS: std::sync::atomic::AtomicU32 =
+                                std::sync::atomic::AtomicU32::new(0);
+                            let n = TICKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                            if n % 10 == 1 {
+                                eprintln!("frame: bar hover tick #{n}");
+                            }
+                        }
+                        // The engine's duration cache saves a core-locking
+                        // property read per frame; the read is the fallback
+                        // for the first frames of a file.
+                        let duration = {
+                            let d = core_tick.cached_duration.get();
+                            if d > 0.0 {
+                                d
+                            } else {
+                                core_tick.player.get_double("duration").unwrap_or(0.0)
+                            }
+                        };
+                        let width = scale_tick.width().max(1) as f64;
+                        let frac = (core_tick.hover_x.get() / width).clamp(0.0, 1.0);
+                        let t = frac * duration;
+                        bubble_tick.set_text(&crate::ui::util::format_time(t));
+                        bubble_tick.set_visible(duration > 0.0);
+                        core_tick.reposition_time_chip();
+                        // The visible preview glides with the pointer between
+                        // content updates (its frames land on decode time, the
+                        // position must not wait for them).
+                        core_tick.reposition_thumb_preview();
+                        // While a scrub session is active the hover preview's
+                        // seeks on the hidden second instance still compete
+                        // with the scrub seeks for decode — throttle them to
+                        // one every 150 ms instead of suppressing them
+                        // entirely (owner: more frequent thumbnails; the
+                        // thumbnailer seeks keyframe-only, so its steps land
+                        // fast even on heavy files).
+                        if !scrubbing_tick.get() {
+                            core_tick.queue_seek_thumbnail(t);
+                        } else if scrub_thumb_tick.get().elapsed()
+                            >= std::time::Duration::from_millis(150)
+                        {
+                            scrub_thumb_tick.set(std::time::Instant::now());
+                            core_tick.queue_seek_thumbnail(t);
+                        }
+                        glib::ControlFlow::Break
+                    }));
                 }
-                let _ = y;
-            });
-        }
-        {
-            let core = core.clone();
-            let bubble = hover_bubble.clone();
-            motion.connect_leave(move |_| {
-                bubble.set_visible(false);
-                if let Some(picture) = core.thumb_picture.borrow().as_ref() {
-                    picture.set_visible(false);
-                }
-                // Cancel any pending thumbnail timer so the window does not
-                // light up after the pointer left.
-                if let Some(t) = core.thumb_timer.borrow_mut().take() {
-                    t.remove();
-                }
-            });
+            };
+            {
+                let core_motion = core.clone();
+                motion.connect_motion(move |_, x, _y| {
+                    core_motion.bar_hovering.set(true);
+                    if std::env::var_os("FRAME_DEBUG").is_some() {
+                        static RAW: std::sync::atomic::AtomicU32 =
+                            std::sync::atomic::AtomicU32::new(0);
+                        let n = RAW.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                        if n % 100 == 1 {
+                            eprintln!("frame: bar raw motion #{n}");
+                        }
+                    }
+                    core_motion.hover_x.set(x);
+                    arm_hover();
+                });
+            }
+            {
+                let core_leave = core.clone();
+                let bubble_leave = bubble.clone();
+                let hover_tick_leave = hover_tick.clone();
+                motion.connect_leave(move |_| {
+                    // A still-queued tick must not resurrect the bubble and
+                    // thumbnail after the pointer left the bar.
+                    if let Some(id) = hover_tick_leave.borrow_mut().take() {
+                        id.remove();
+                    }
+                    core_leave.bar_hovering.set(false);
+                    bubble_leave.set_visible(false);
+                    if let Some(picture) = core_leave.thumb_picture.borrow().as_ref() {
+                        picture.set_visible(false);
+                    }
+                    // Cancel any pending thumbnail timer so the window does
+                    // not light up after the pointer left.
+                    if let Some(t) = core_leave.thumb_timer.borrow_mut().take() {
+                        t.remove();
+                    }
+                });
+            }
         }
         seek.add_controller(motion);
 

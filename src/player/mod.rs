@@ -78,6 +78,15 @@ pub struct PlayerWindowCore {
     thumb_timer: RefCell<Option<glib::SourceId>>,
     hover_time: Cell<f64>,
     hover_x: Cell<f64>,
+    // True while the pointer is on the seek bar: a thumbnail decode that
+    // was already in flight when the pointer left must not present itself
+    // afterwards (leaving cancels the debounce timer, not the decode).
+    bar_hovering: Cell<bool>,
+    // Duration cache for the hot hover/position paths: reading the property
+    // out of mpv takes the core lock, and doing that per motion event or per
+    // time-pos report (an 180 fps file reports ~180×/s) contends with the
+    // decode loop on the UI thread. Maintained by the engine events.
+    cached_duration: Cell<f64>,
     // Set once PlayerWindow::build finished (weak: the window owns the core).
     player_window: RefCell<std::rc::Weak<PlayerWindow>>,
 }
@@ -149,6 +158,8 @@ impl PlayerWindowCore {
             thumb_timer: RefCell::new(None),
             hover_time: Cell::new(0.0),
             hover_x: Cell::new(0.0),
+            bar_hovering: Cell::new(false),
+            cached_duration: Cell::new(0.0),
             player_window: RefCell::new(std::rc::Weak::new()),
         });
 
@@ -304,6 +315,11 @@ impl PlayerWindowCore {
     /// Show a thumbnail centred on the pointer above the control bar, lifted
     /// so the timestamp chip fits between it and the bar (docs/03 popup).
     fn present_thumbnail(self: &Rc<Self>, tex: &gdk::MemoryTexture, _pos: f64) {
+        // The decode finished after the pointer left the bar: drop the
+        // frame instead of lighting the overlay up on its own.
+        if !self.bar_hovering.get() {
+            return;
+        }
         let picture_cell = self.thumb_picture.borrow();
         let Some(picture) = picture_cell.as_ref() else {
             return;
@@ -1137,6 +1153,7 @@ impl PlayerWindow {
                         }
                     }
                 }
+                self.core.cached_duration.set(duration.unwrap_or(0.0));
                 self.control_bar.update_time(Some(0.0), duration);
                 self.apply_pending_resume();
                 self.show_controls();
@@ -1171,6 +1188,7 @@ impl PlayerWindow {
             EngineEvent::Idle => {
                 self.show_controls();
                 self.core.release_inhibit();
+                self.core.cached_duration.set(0.0);
                 self.control_bar.update_time(Some(0.0), None);
             }
             EngineEvent::PauseChanged(paused) => {
@@ -1184,10 +1202,19 @@ impl PlayerWindow {
                 }
             }
             EngineEvent::PositionChanged(pos) => {
-                let dur = self.core.player.get_double("duration");
+                // ~1 report per decoded frame; the duration comes from the
+                // engine's cache (the property read takes the mpv core lock,
+                // contended with the decode loop at high frame rates).
+                let dur = self.core.cached_duration.get();
+                let dur = if dur > 0.0 {
+                    Some(dur)
+                } else {
+                    self.core.player.get_double("duration")
+                };
                 self.control_bar.update_time(pos, dur);
             }
             EngineEvent::DurationChanged(dur) => {
+                self.core.cached_duration.set(dur.unwrap_or(0.0));
                 let pos = self.core.player.position();
                 self.control_bar.update_time(pos, dur);
             }
@@ -1281,23 +1308,52 @@ impl PlayerWindow {
     // -- controls auto-hide (docs/03) ------------------------------------------
 
     fn connect_controls_motion(self: &Rc<Self>) {
-        let this = self.clone();
+        // Motion fires at the mouse's polling rate — up to ~1000 events/s —
+        // and the old handlers cancelled and re-created the hide timer on
+        // every one of them. Coalesced like the seek-bar hover work: the
+        // event only arms a one-shot frame-clock tick, the actual show +
+        // re-schedule runs once per display frame.
+        let chrome_tick: Rc<std::cell::RefCell<Option<gtk::TickCallbackId>>> =
+            Rc::new(RefCell::new(None));
+        let arm_chrome = {
+            let window = self.core.window.clone();
+            let chrome_tick = chrome_tick.clone();
+            let this = self.clone();
+            move || {
+                if chrome_tick.borrow().is_some() {
+                    return;
+                }
+                let slot = chrome_tick.clone();
+                let this_tick = this.clone();
+                *chrome_tick.borrow_mut() = Some(window.add_tick_callback(move |_, _| {
+                    *slot.borrow_mut() = None;
+                    // show_controls() cancels the pending hide; the
+                    // schedule re-arms 2 s past this frame — the same
+                    // semantics the per-event handlers had.
+                    this_tick.show_controls();
+                    this_tick.schedule_hide();
+                    glib::ControlFlow::Break
+                }));
+            }
+        };
         let motion = gtk::EventControllerMotion::new();
-        motion.connect_motion(move |_, _, _| {
-            this.show_controls();
-            this.schedule_hide();
-        });
+        {
+            let arm = arm_chrome.clone();
+            motion.connect_motion(move |_, _, _| arm());
+        }
         self.core.window.add_controller(motion);
 
         // Pointer resting on the control bar — or the header chrome — keeps
         // the controls visible.
-        let this2 = self.clone();
         let cb_motion = gtk::EventControllerMotion::new();
-        cb_motion.connect_motion(move |_, _, _| {
-            this2.pointer_on_controls.set(true);
-            this2.cancel_hide();
-            this2.show_controls();
-        });
+        {
+            let this2 = self.clone();
+            let arm = arm_chrome.clone();
+            cb_motion.connect_motion(move |_, _, _| {
+                this2.pointer_on_controls.set(true);
+                arm();
+            });
+        }
         {
             let this3 = self.clone();
             cb_motion.connect_leave(move |_| {
@@ -1308,13 +1364,15 @@ impl PlayerWindow {
         self.control_bar.container.add_controller(cb_motion);
         // A controller lives on exactly one widget — the header gets its own
         // with the same handlers.
-        let this4 = self.clone();
         let hdr_motion = gtk::EventControllerMotion::new();
-        hdr_motion.connect_motion(move |_, _, _| {
-            this4.pointer_on_controls.set(true);
-            this4.cancel_hide();
-            this4.show_controls();
-        });
+        {
+            let this4 = self.clone();
+            let arm = arm_chrome.clone();
+            hdr_motion.connect_motion(move |_, _, _| {
+                this4.pointer_on_controls.set(true);
+                arm();
+            });
+        }
         {
             let this5 = self.clone();
             hdr_motion.connect_leave(move |_| {

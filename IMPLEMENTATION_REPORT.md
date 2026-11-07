@@ -512,6 +512,37 @@ The whole app is **never** described as MIT; `LICENSE` and
     under Xvfb: the header reads `test-silent` for the scratch clip and
     still shows a file's real metadata title for files that have one
     (e.g. the owner's bad-apple file).
+26.  **Bottom-bar interaction de-churned** (owner: "still some lag in
+    using that bottom bar", after the scrub pipeline itself was already
+    smooth): three separate per-event costs remained on the paths around
+    the scrub. First, every delivered hover motion on the seek bar read
+    `duration` out of mpv — a synchronous core-locking property read,
+    contended with the decode loop on heavy files — and re-laid-out two
+    overlay children (chip + preview margins), while three motion
+    controllers cancelled and re-created the 2 s hide timer per event.
+    The hover update (timestamp chip, preview glide, thumbnail request)
+    and the chrome show/hide bookkeeping are now coalesced onto one-shot
+    frame-clock ticks: an event only records the pointer position and
+    arms the tick, so the work runs once per display frame at most.
+    Second, every `time-pos` report (~180/s on the owner's file) also
+    read `duration` from mpv on the UI thread; the engine now keeps a
+    `cached_duration` maintained by `DurationChanged`/load events and the
+    hot paths read that (property read only as the first-frames
+    fallback). Third, a thumbnail decode already in flight when the
+    pointer left the bar still presented itself afterwards (leaving
+    cancelled only the debounce timer) — `present_thumbnail` now gates
+    on a `bar_hovering` flag, and the leave handler also cancels the
+    still-queued hover tick so it cannot resurrect the chip. Verified
+    under Xvfb on a soundless clip with `FRAME_DEBUG` counters: hover
+    ticks are bounded by the frame rate while raw delivered motion runs
+    ahead of them; an A/B against the pre-fix build shows the stale
+    post-leave thumbnail the old code presented (old: visible box after
+    the pointer left; new: clean, no `thumbnail shown` after leave);
+    press → drag → release still lands exactly one seek ~260 ms after
+    release, auto-hide and reshow are unchanged. One llvmpipe run stalled
+    its GL publish to black mid-pass (software-GL flakiness; the same
+    binary rendered the full pattern in the adjacent A/B pass) — noted,
+    not a regression. `cargo test` 27/27.
 
 ## 14. Notable findings during verification
 
