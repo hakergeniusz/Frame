@@ -543,6 +543,45 @@ The whole app is **never** described as MIT; `LICENSE` and
     its GL publish to black mid-pass (software-GL flakiness; the same
     binary rendered the full pattern in the adjacent A/B pass) — noted,
     not a regression. `cargo test` 27/27.
+27.  **Bottom-bar lag, round 2** (owner: "there is still a visible lag when
+    using the bottom bar"). Three costs survived the first pass:
+    (a) `update_time` ran once per **decoded frame** — `PositionChanged`
+    fires per decode (≈180/s on the owner's files) and each report rewrote
+    both time labels (the duration one with an identical string, which still
+    invalidates the label), **re-set the scale's range** and set its value on
+    the very widgets under the pointer. It is now stored and applied once per
+    display frame from a one-shot tick on the bar (weak reference — no
+    cycle), with skip-unchanged writes for both labels, the range and
+    sensitivity. (b) The hidden thumbnailer's self-sustaining pass window
+    was uncapped: while any thumbnail request was in flight the engine
+    nudged a render pass after every pass — a full render + full-frame
+    readback + publish at frame-clock rate (~180/s on the owner's panel)
+    that starts the moment the pointer touches the bar and, paused,
+    re-publishes the unchanged frame just to poll the hidden instance. It is
+    now rate-capped to the same 25 ms floor as the scrub window (~40
+    polls/s — plenty for a load→seek→decode→land pipeline). (c) The hover
+    tick still did avoidable work per frame: `set_text` with (mostly)
+    identical strings (a Pango re-shape + relayout per frame), a `measure`
+    per tick for the chip's width, and margin writes even at rest — all now
+    skip-unchanged cached (text/visibility/width per text change, margins
+    compared before writing). Verified under Xvfb on a **180 fps soundless
+    clip** (owner-like report rates) with an A/B against the pre-fix build:
+    paused + hover-sweep process CPU dropped **31.3% → 2.0%** (the
+    UI-thread cost while the pointer rests on the bar); the
+    `update_time guarded` debug lines during an identical drag halved
+    (6 per-report → 3 per-tick), showing the coalescer live during scrub;
+    scrub press→drag→release still lands (6 publishes both builds),
+    post-leave is clean (no chip, no grey box), hover bubble follows the
+    pointer, auto-hide after interaction + reshow work (and the
+    never-touched-pointer startup state is identical on both builds). The
+    paused+hover A/B with thumbnails enabled (25–27 requests, all landed on
+    both builds) was CPU-flat — on this software-GL setup the loop cost is
+    below measurement noise; the cap's win is the removed full-frame
+    publish storm, which llvmpipe cannot make loud. One harness run produced
+    an all-black thumbnail readback (27/27 `centre_r=0`) that four focused
+    A/B re-runs could not reproduce in either build — recorded as
+    environmental, matching the item #26 llvmpipe precedent. `cargo test`
+    27/27.
 
 ## 14. Notable findings during verification
 

@@ -59,6 +59,25 @@ pub struct ControlBar {
     drag_active: Rc<Cell<bool>>,
     /// The pipeline's pause state before the scrub froze it.
     was_paused: Rc<Cell<bool>>,
+    // -- time-update coalescing ----------------------------------------------
+    /// Latest engine-reported position (PositionChanged fires once per
+    /// decoded frame — up to 180/s on the owner's files); applied once per
+    /// display frame from a one-shot tick on the bar.
+    pending_pos: Cell<Option<f64>>,
+    /// Duration that goes with `pending_pos`.
+    pending_dur: Cell<Option<f64>>,
+    /// The armed one-shot tick, if any. Shared behind an `Rc` so the tick
+    /// closure can clear the slot itself (TickCallbackId is not Clone; the
+    /// slot must stay out of the closure's bar reference — no cycle).
+    time_tick: Rc<RefCell<Option<gtk::TickCallbackId>>>,
+    /// Last strings written to the labels: gtk_label_set_text with an
+    /// identical string still invalidates the label's layout, and these run
+    /// per frame while playing.
+    last_cur_text: RefCell<String>,
+    last_dur_text: RefCell<String>,
+    /// Range upper the scale was last configured with — `set_range`
+    /// re-configures the adjustment, skip it while the duration is unchanged.
+    last_range_upper: Cell<f64>,
 }
 
 impl ControlBar {
@@ -446,8 +465,22 @@ impl ControlBar {
                         let width = scale_tick.width().max(1) as f64;
                         let frac = (core_tick.hover_x.get() / width).clamp(0.0, 1.0);
                         let t = frac * duration;
-                        bubble_tick.set_text(&crate::ui::util::format_time(t));
-                        bubble_tick.set_visible(duration > 0.0);
+                        // Skip-unchanged: gtk_label_set_text with an identical
+                        // string still invalidates the label's layout, and this
+                        // runs per frame while the pointer is on the bar.
+                        let ts = crate::ui::util::format_time(t);
+                        if ts != *core_tick.last_hover_text.borrow() {
+                            bubble_tick.set_text(&ts);
+                            *core_tick.last_hover_text.borrow_mut() = ts;
+                            // The chip's natural width tracks its text; the
+                            // next placement re-measures (reposition_time_chip).
+                            core_tick.bubble_nat_w.set(0.0);
+                        }
+                        let vis = duration > 0.0;
+                        if vis != core_tick.hover_bubble_vis.get() {
+                            bubble_tick.set_visible(vis);
+                            core_tick.hover_bubble_vis.set(vis);
+                        }
                         core_tick.reposition_time_chip();
                         // The visible preview glides with the pointer between
                         // content updates (its frames land on decode time, the
@@ -500,6 +533,8 @@ impl ControlBar {
                     }
                     core_leave.bar_hovering.set(false);
                     bubble_leave.set_visible(false);
+                    // Keep the skip-unchanged caches in step with the widgets.
+                    core_leave.hover_bubble_vis.set(false);
                     if let Some(picture) = core_leave.thumb_picture.borrow().as_ref() {
                         picture.set_visible(false);
                     }
@@ -567,6 +602,12 @@ impl ControlBar {
             scrub_paused,
             drag_active,
             was_paused,
+            pending_pos: Cell::new(None),
+            pending_dur: Cell::new(None),
+            time_tick: Rc::new(RefCell::new(None)),
+            last_cur_text: RefCell::new(String::new()),
+            last_dur_text: RefCell::new(String::new()),
+            last_range_upper: Cell::new(0.0),
         })
     }
 
@@ -586,10 +627,51 @@ impl ControlBar {
         self.shuffle_btn.set_visible(len > 1);
     }
 
-    pub fn update_time(&self, pos: Option<f64>, duration: Option<f64>) {
-        let dur = duration.unwrap_or(0.0);
-        let pos = pos.unwrap_or(0.0).min(dur);
-        self.time_duration.set_text(&crate::ui::util::format_time(dur));
+    /// Engine reported a position/duration: store it and arm a one-shot
+    /// frame-clock tick. PositionChanged fires once per *decoded* frame —
+    /// up to 180/s on the owner's files — and each report rewrote both time
+    /// labels, the scale's range and its value on the very widgets the
+    /// pointer hovers (owner's round-2 bar lag). One application per display
+    /// frame is the visible rate anyway.
+    pub fn update_time(self: &Rc<Self>, pos: Option<f64>, duration: Option<f64>) {
+        self.pending_pos.set(pos);
+        self.pending_dur.set(duration);
+        if self.time_tick.borrow().is_some() {
+            return;
+        }
+        let slot = self.time_tick.clone();
+        let slot_cb = slot.clone();
+        let weak = Rc::downgrade(self);
+        let container = self.container.clone();
+        *slot.borrow_mut() = Some(container.add_tick_callback(move |_, _| {
+            *slot_cb.borrow_mut() = None;
+            // The bar can be dropped while the tick is still queued: the
+            // closure only holds the slot and a weak reference — no cycle.
+            if let Some(bar) = weak.upgrade() {
+                bar.apply_pending_time();
+            }
+            glib::ControlFlow::Break
+        }));
+    }
+
+    /// Apply the pending time update (runs at most once per display frame).
+    fn apply_pending_time(&self) {
+        let dur = self.pending_dur.get().unwrap_or(0.0);
+        let pos = self.pending_pos.get().unwrap_or(0.0).min(dur);
+        if std::env::var_os("FRAME_DEBUG").is_some() {
+            static APPLIED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            let n = APPLIED.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            if n % 100 == 1 {
+                eprintln!("frame: time apply #{n} pos={pos:.2}");
+            }
+        }
+        // The duration label only changes with the file; rewriting it with
+        // the same string per report invalidates the label for nothing.
+        let ds = crate::ui::util::format_time(dur);
+        if ds != *self.last_dur_text.borrow() {
+            self.time_duration.set_text(&ds);
+            *self.last_dur_text.borrow_mut() = ds;
+        }
         if self.scrub_paused.get() || self.drag_active.get() {
             // Scrub session or bar held: the pointer is the truth. The
             // engine's reported position is the last *landed* seek —
@@ -605,21 +687,41 @@ impl ControlBar {
                 );
             }
             let v = self.seek.value() / 1000.0;
-            self.time_current.set_text(&crate::ui::util::format_time(v));
+            let vs = crate::ui::util::format_time(v);
+            if vs != *self.last_cur_text.borrow() {
+                self.time_current.set_text(&vs);
+                *self.last_cur_text.borrow_mut() = vs;
+            }
             return;
         }
-        self.time_current.set_text(&crate::ui::util::format_time(pos));
+        let cs = crate::ui::util::format_time(pos);
+        if cs != *self.last_cur_text.borrow() {
+            self.time_current.set_text(&cs);
+            *self.last_cur_text.borrow_mut() = cs;
+        }
         if dur > 0.0 {
+            // set_range re-configures the adjustment — only when the file's
+            // duration actually changed.
+            let upper = (dur * 1000.0).max(1.0);
+            if (upper - self.last_range_upper.get()).abs() > f64::EPSILON {
+                self.seek_guard.set(true);
+                self.seek.set_range(0.0, upper);
+                self.seek_guard.set(false);
+                self.last_range_upper.set(upper);
+            }
             self.seek_guard.set(true);
-            self.seek.set_range(0.0, (dur * 1000.0).max(1.0));
             self.seek.set_value(pos * 1000.0);
             self.seek_guard.set(false);
-            self.seek.set_sensitive(true);
+            if !self.seek.is_sensitive() {
+                self.seek.set_sensitive(true);
+            }
         } else {
             self.seek_guard.set(true);
             self.seek.set_value(0.0);
             self.seek_guard.set(false);
-            self.seek.set_sensitive(false);
+            if self.seek.is_sensitive() {
+                self.seek.set_sensitive(false);
+            }
         }
     }
 

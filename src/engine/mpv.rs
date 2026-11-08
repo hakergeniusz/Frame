@@ -414,6 +414,12 @@ pub struct MpvPlayer {
     thumb: Mutex<Option<ThumbEngine>>,
     // Requests waiting for the next render pass (UI thread → render pass).
     thumb_request: Mutex<Option<(String, f64, i32, i32)>>,
+    // Rate cap for the thumbnailer's self-sustaining pass window: it needs
+    // passes to progress (load → seek → decode → land), but at frame-clock
+    // rate the loop renders and reads back the full frame every tick —
+    // up to 180/s of publishes of a frame that mostly never changed,
+    // exactly while the pointer rests on the bar (owner's round-2 lag).
+    last_thumb_nudge: Mutex<std::time::Instant>,
     // Raw Arc<Shared> handed to libmpv as the callback ctx; reconstructed and
     // dropped in free_render_context().
     callback_raw: Mutex<Option<*mut Shared>>,
@@ -908,6 +914,7 @@ impl MpvPlayer {
                 render_window_logged: std::sync::atomic::AtomicBool::new(false),
                 thumb: Mutex::new(None),
                 thumb_request: Mutex::new(None),
+                last_thumb_nudge: Mutex::new(std::time::Instant::now()),
                 callback_raw: Mutex::new(None),
                 event_thread: Mutex::new(None),
             });
@@ -1237,8 +1244,21 @@ impl MpvPlayer {
         }
         // Keep passes coming while the hidden thumbnailer works — when
         // the video is paused nothing else schedules draws, and the
-        // thumbnailer needs several (load, seek, render).
-        if self.thumb_busy() {
+        // thumbnailer needs several (load, seek, render). Rate-capped like
+        // the scrub window: uncapped, the loop renders and reads back the
+        // full frame at frame-clock rate (~180/s on the owner's panel) just
+        // to poll a paused instance — a publish storm that begins the moment
+        // the pointer touches the bar. ~40 polls/s keeps each request's
+        // multi-pass pipeline a few tens of ms long at most.
+        if self.thumb_busy()
+            && self
+                .last_thumb_nudge
+                .lock()
+                .unwrap()
+                .elapsed()
+                >= Self::WINDOW_NUDGE_MIN
+        {
+            *self.last_thumb_nudge.lock().unwrap() = std::time::Instant::now();
             self.nudge_render();
         }
         // Seeks and picture changes that happen while the pipeline is

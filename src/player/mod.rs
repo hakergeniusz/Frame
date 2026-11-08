@@ -87,6 +87,16 @@ pub struct PlayerWindowCore {
     // time-pos report (an 180 fps file reports ~180×/s) contends with the
     // decode loop on the UI thread. Maintained by the engine events.
     cached_duration: Cell<f64>,
+    // Skip-unchanged caches for the per-frame hover work: gtk_label_set_text
+    // with an identical string still invalidates the label's layout, and
+    // margin writes queue an overlay re-allocation — both per frame while the
+    // pointer moves. The chip's natural width is re-measured only when its
+    // text actually changed.
+    last_hover_text: RefCell<String>,
+    hover_bubble_vis: Cell<bool>,
+    bubble_nat_w: Cell<f64>,
+    chip_margins: Cell<(i32, i32)>,
+    thumb_margins: Cell<(i32, i32)>,
     // Set once PlayerWindow::build finished (weak: the window owns the core).
     player_window: RefCell<std::rc::Weak<PlayerWindow>>,
 }
@@ -160,6 +170,11 @@ impl PlayerWindowCore {
             hover_x: Cell::new(0.0),
             bar_hovering: Cell::new(false),
             cached_duration: Cell::new(0.0),
+            last_hover_text: RefCell::new(String::new()),
+            hover_bubble_vis: Cell::new(false),
+            bubble_nat_w: Cell::new(0.0),
+            chip_margins: Cell::new((-1, -1)),
+            thumb_margins: Cell::new((-1, -1)),
             player_window: RefCell::new(std::rc::Weak::new()),
         });
 
@@ -292,7 +307,17 @@ impl PlayerWindowCore {
     /// Centre `widget` (a small overlay: thumbnail or timestamp chip) above
     /// the control bar at the pointer's position on the seek bar. `lift`
     /// raises the widget further (the thumbnail is lifted above the chip).
-    fn place_above_controls(&self, widget: &gtk::Widget, x_on_seek: f64, width: f64, lift: f64) {
+    /// `cache` holds the last written margins: setting an identical margin
+    /// still queues an overlay re-allocation, and this runs per frame while
+    /// the pointer moves — identical values (pointer at rest) must not.
+    fn place_above_controls(
+        &self,
+        widget: &gtk::Widget,
+        x_on_seek: f64,
+        width: f64,
+        lift: f64,
+        cache: &Cell<(i32, i32)>,
+    ) {
         let container_cell = self.control_container.borrow();
         let Some(container) = container_cell.as_ref() else {
             return;
@@ -308,8 +333,13 @@ impl PlayerWindowCore {
         };
         let win_w = self.window.width() as f64;
         let margin = ((px - width / 2.0).round() as i32).clamp(4, (win_w - width - 4.0).max(4.0) as i32);
-        widget.set_margin_start(margin);
-        widget.set_margin_bottom(container.height() + 12 + lift.round() as i32);
+        let bottom = container.height() + 12 + lift.round() as i32;
+        let m = (margin, bottom);
+        if cache.get() != m {
+            widget.set_margin_start(margin);
+            widget.set_margin_bottom(bottom);
+            cache.set(m);
+        }
     }
 
     /// Show a thumbnail centred on the pointer above the control bar, lifted
@@ -331,7 +361,13 @@ impl PlayerWindowCore {
         picture.set_size_request(disp_w as i32, disp_h as i32);
         // Chip height + gap; the chip itself sits at the base position.
         let lift = 26.0 + 8.0;
-        self.place_above_controls(picture.upcast_ref::<gtk::Widget>(), self.hover_x.get(), disp_w, lift);
+        self.place_above_controls(
+            picture.upcast_ref::<gtk::Widget>(),
+            self.hover_x.get(),
+            disp_w,
+            lift,
+            &self.thumb_margins,
+        );
         picture.set_visible(true);
         drop(picture_cell);
         if std::env::var_os("FRAME_DEBUG").is_some() {
@@ -1006,19 +1042,27 @@ impl PlayerWindow {
 
     /// Position the hover timestamp chip just above the control bar, centred
     /// on the pointer's position on the seek bar (the thumbnail lifts above
-    /// it once it arrives).
+    /// it once it arrives). The chip's natural width is only re-measured
+    /// when its text changed (the hover tick records it) — `measure` runs
+    /// the label's Pango layout, per frame that is avoidable work.
     pub fn reposition_time_chip(&self) {
         let core = &self.core;
         let bubble = self.control_bar.hover_bubble.clone();
         if !bubble.is_visible() {
             return;
         }
-        let (_, nat, _, _) = bubble.measure(gtk::Orientation::Horizontal, -1);
+        let mut nat = core.bubble_nat_w.get();
+        if nat <= 0.0 {
+            let (_, m, _, _) = bubble.measure(gtk::Orientation::Horizontal, -1);
+            nat = m as f64;
+            core.bubble_nat_w.set(nat);
+        }
         core.place_above_controls(
             bubble.upcast_ref::<gtk::Widget>(),
             core.hover_x.get(),
-            nat as f64 + 16.0,
+            nat + 16.0,
             0.0,
+            &core.chip_margins,
         );
     }
 
@@ -1039,6 +1083,7 @@ impl PlayerWindow {
             core.hover_x.get(),
             (w.max(1)) as f64,
             34.0,
+            &core.thumb_margins,
         );
     }
 
